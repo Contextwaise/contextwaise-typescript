@@ -11,5 +11,5 @@
     "types": ["node"],
     "customConditions": ["contextwaise-source"]
   },
-  "include": ["src", "test", "demo", "e2e"]
+  "include": ["src", "test"]
 }
