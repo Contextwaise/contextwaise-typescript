@@ -1,0 +1,21 @@
+{
+  "name": "contextwaise-typescript",
+  "private": true,
+  "workspaces": [
+    "core",
+    "sdk/typescript"
+  ],
+  "scripts": {
+    "build": "npm run build -w contextwaise",
+    "test": "npm test -w @contextwaise/core && npm test -w contextwaise",
+    "typecheck": "npm run typecheck -w @contextwaise/core && npm run typecheck -w contextwaise",
+    "demo": "npm run demo -w contextwaise"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

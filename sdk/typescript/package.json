@@ -1,0 +1,68 @@
+{
+  "name": "contextwaise",
+  "version": "0.1.0",
+  "description": "Shrink agent tool results at birth: cache-safe, reversible, intent-aware.",
+  "homepage": "https://contextwaise.com/docs/sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Contextwaise/contextwaise-typescript.git",
+    "directory": "sdk/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/Contextwaise/contextwaise-typescript/issues"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./ai-sdk": {
+      "types": "./dist/ai-sdk.d.ts",
+      "default": "./dist/ai-sdk.js"
+    },
+    "./anthropic": {
+      "types": "./dist/anthropic.d.ts",
+      "default": "./dist/anthropic.js"
+    },
+    "./openai": {
+      "types": "./dist/openai.d.ts",
+      "default": "./dist/openai.js"
+    }
+  },
+  "scripts": {
+    "build": "npm --prefix ../../core run build && rm -rf dist && tsc -p tsconfig.build.json",
+    "test": "node --conditions=contextwaise-source --test test/*.test.ts",
+    "typecheck": "tsc -p .",
+    "demo": "node --conditions=contextwaise-source demo/server.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "test:e2e": "node --conditions=contextwaise-source --env-file-if-exists=.env --test --test-concurrency=1 e2e/*.test.ts"
+  },
+  "peerDependencies": {
+    "ai": ">=7"
+  },
+  "dependencies": {
+    "@contextwaise/core": "^0.1.0"
+  },
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "^4.0.78",
+    "@ai-sdk/openai": "^4.0.83",
+    "@anthropic-ai/sdk": "^0.133.0",
+    "ai": "^7.0.127",
+    "openai": "^7.32.0"
+  }
+}

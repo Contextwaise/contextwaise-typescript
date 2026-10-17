@@ -1,0 +1,41 @@
+{
+  "name": "@contextwaise/core",
+  "version": "0.1.0",
+  "description": "The rules that decide what context reaches your model: cleanup, selection, cache-safe conversations, model prices.",
+  "homepage": "https://contextwaise.com/docs/sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Contextwaise/contextwaise-typescript.git",
+    "directory": "core"
+  },
+  "bugs": {
+    "url": "https://github.com/Contextwaise/contextwaise-typescript/issues"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "contextwaise-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc -p .",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}
