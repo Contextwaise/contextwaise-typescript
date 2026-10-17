@@ -34,9 +34,7 @@
     "build": "npm --prefix ../../core run build && rm -rf dist && tsc -p tsconfig.build.json",
     "test": "node --conditions=contextwaise-source --test test/*.test.ts",
     "typecheck": "tsc -p .",
-    "demo": "node --conditions=contextwaise-source demo/server.ts",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build",
-    "test:e2e": "node --conditions=contextwaise-source --env-file-if-exists=.env --test --test-concurrency=1 e2e/*.test.ts"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "peerDependencies": {
     "ai": ">=7"
@@ -59,10 +57,6 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "^4.0.78",
-    "@ai-sdk/openai": "^4.0.83",
-    "@anthropic-ai/sdk": "^0.133.0",
-    "ai": "^7.0.127",
-    "openai": "^7.32.0"
+    "ai": "^7.0.127"
   }
 }

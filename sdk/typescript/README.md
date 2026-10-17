@@ -89,28 +89,11 @@ To score, the app forwards the intent and sections to **TypeSafe (Jev)**, its re
 
 Build: `npm run build` (compiled ESM + types in `dist/`).
 
-## Demo
-
-A Vercel AI SDK agent with six tools (repo listing, files, tests, logs, orders API, docs page) and a live page that shows everything behind the scenes: each model call with its cache reads, writes and cost, each raw tool output, and each Contextwaise decision, against what the same requests would have cost without it.
-
-```bash
-cd sdk
-npm install
-npm run demo          # http://localhost:4100
-```
-
-- With `CONTEXTWAISE_API_KEY` and `CONTEXTWAISE_URL` in `sdk/typescript/.env`, relevance comes from your Contextwaise app (Jev) and every result appears on its "Tool results" page.
-- With `OPENAI_API_KEY` in `sdk/typescript/.env`, the agent runs on a **real** OpenAI model (`OPENAI_MODEL`, default `gpt-6.1-sol`). This costs money: a few cents per question. "With" costs come from OpenAI's own usage report; "without" is an estimate (the same requests with raw outputs, replayed through a cache simulator, never sent).
-- Without a key, or with `DEMO_SIMULATED=1`, a free scripted model plays the agent and bills itself like Claude's prompt cache.
-
 ## Tests
 
 ```bash
 npm test           # offline: the API and the models are stubs
-npm run test:e2e   # live: real Claude and OpenAI models and a running Contextwaise app
 ```
-
-`test:e2e` needs `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CONTEXTWAISE_API_KEY` and `CONTEXTWAISE_URL` (from the environment or `.env`). Each case also runs without Contextwaise, and prints the input tokens both runs were billed.
 
 ## License
 

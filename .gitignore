@@ -7,6 +7,5 @@ dist/
 .env.*
 !.env.example
 
-sdk/typescript/demo/logs/
 .DS_Store
 *.log

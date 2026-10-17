@@ -32,14 +32,13 @@ Full options in the [SDK README](sdk/typescript/README.md).
 
 ## Development
 
-Requires Node 22.18 or later (tests and the demo run TypeScript directly).
+Requires Node 22.18 or later (tests run TypeScript directly).
 
 ```bash
 npm install          # links core into the SDK
 npm test             # core, then SDK
 npm run typecheck
 npm run build        # core/dist and sdk/typescript/dist
-npm run demo         # live agent demo on http://localhost:4100 (free simulated model by default)
 ```
 
 The SDK reads the core's source during development (the `contextwaise-source` export

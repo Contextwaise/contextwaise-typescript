@@ -8,8 +8,7 @@
   "scripts": {
     "build": "npm run build -w contextwaise",
     "test": "npm test -w @contextwaise/core && npm test -w contextwaise",
-    "typecheck": "npm run typecheck -w @contextwaise/core && npm run typecheck -w contextwaise",
-    "demo": "npm run demo -w contextwaise"
+    "typecheck": "npm run typecheck -w @contextwaise/core && npm run typecheck -w contextwaise"
   },
   "devDependencies": {
     "@types/node": "^20",
