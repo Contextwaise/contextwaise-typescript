@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# env files: keys live here, never in git
+.env
+.env.*
+!.env.example
+
+sdk/typescript/demo/logs/
+.DS_Store
+*.log

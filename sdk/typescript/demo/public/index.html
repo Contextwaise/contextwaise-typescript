@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contextwaise · live agent demo</title>
+<meta name="description" content="Chat with a real AI agent and watch Contextwaise trim every tool result before the model reads it, with the cost with and without.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Host+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="https://contextwaise.com" target="_blank" rel="noopener">
+    <span class="mark"><i></i><i class="l"></i><i></i><i class="d"></i></span><span>Contextw<em>ai</em>se</span>
+  </a>
+  <span class="tag"><i class="dot live"></i>Live demo</span>
+  <div class="top-right">
+    <span class="chip" id="model"></span>
+    <button id="reset" class="btn-light">Restart</button>
+    <a class="btn-dark" href="https://contextwaise.com" target="_blank" rel="noopener">Start free</a>
+  </div>
+</header>
+
+<main class="grid">
+  <!-- 1. The visitor's side -->
+  <section class="panel chat">
+    <div class="panel-head"><h2>Chat</h2><span class="sub">ShopBot · 6 tools</span></div>
+    <div id="messages" class="messages">
+      <div class="welcome" id="welcome">
+        <h1>Ask an agent a real question.</h1>
+        <p>ShopBot works on a sample online-shop codebase. Its tools return big, noisy output: test runs, logs, JSON, web pages. Contextwaise trims each one before the model reads it.</p>
+        <div class="suggest" id="suggest"></div>
+      </div>
+    </div>
+    <div class="chips" id="chips" hidden></div>
+    <form id="form" class="composer">
+      <input id="input" autocomplete="off" placeholder="Ask ShopBot…" aria-label="Message">
+      <button id="send" type="submit" class="btn-dark" aria-label="Send">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+    </form>
+  </section>
+
+  <!-- 2. What happens behind the answer -->
+  <section class="panel scenes">
+    <div class="panel-head">
+      <h2>Behind the scenes</h2>
+      <div class="legend">
+        <span><i class="dot model"></i>Model</span>
+        <span><i class="dot tool"></i>Tool</span>
+        <span><i class="dot sw"></i>Contextwaise</span>
+      </div>
+    </div>
+    <div id="timeline" class="timeline"></div>
+  </section>
+
+  <!-- 3. The numbers -->
+  <section class="panel side">
+    <div class="panel-head"><h2>Savings</h2><span class="sub" id="t-calls">0 model calls</span></div>
+    <div class="card hero">
+      <div class="label">Saved on this conversation</div>
+      <div class="saved-big" id="t-saved">0%</div>
+      <div class="vs">
+        <div><div class="label">With Contextwaise</div><div class="money" id="t-with">$0.0000</div></div>
+        <div><div class="label">Without</div><div class="money muted" id="t-without">$0.0000</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Tool output the model read</div>
+      <div class="dotbar" id="t-dots"></div>
+      <div class="dotbar-legend"><span><i class="sq lime"></i><b id="t-sent">0</b> read</span><span><i class="sq"></i>of <b id="t-raw">0</b> tokens returned</span></div>
+      <dl class="kv">
+        <dt>Input tokens sent</dt><dd id="t-tokens">0 vs 0</dd>
+        <dt>Read from prompt cache</dt><dd id="t-cache">0% vs 0%</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Where the money goes</div>
+      <div id="money"></div>
+      <div class="legend2">
+        <span><i class="sq fixed"></i>system prompt + tools</span>
+        <span><i class="sq conv"></i>conversation</span>
+        <span><i class="sq tools"></i>tool outputs</span>
+        <span><i class="sq out"></i>model output</span>
+      </div>
+      <p class="fine">Contextwaise only shrinks tool outputs. The rest costs the same either way, so the more an agent reads, the more it saves.</p>
+    </div>
+
+    <details class="card log-card">
+      <summary><span class="card-title">Event log</span><button id="copy" type="button" class="btn-light small">Copy</button></summary>
+      <pre id="log" class="log"></pre>
+    </details>
+    <p class="fine" id="t-note"></p>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
