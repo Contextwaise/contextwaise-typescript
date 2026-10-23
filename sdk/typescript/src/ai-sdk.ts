@@ -22,7 +22,11 @@ import { EXPAND_TOOL } from "./tool-calls.ts";
 
 type ModelV4 = Parameters<typeof wrapLanguageModel>[0]["model"];
 
-export function withContextwaise<TOOLS extends ToolSet>(cw: Contextwaise, input: { model: ModelV4; tools: TOOLS }): { model: LanguageModel; tools: TOOLS } {
+/**
+ * `full`: calls whose output must reach the model whole, e.g. a tool listing its actions or
+ * returning a schema the next call must follow exactly. Cut, the agent expands it back piece by piece.
+ */
+export function withContextwaise<TOOLS extends ToolSet>(cw: Contextwaise, input: { model: ModelV4; tools: TOOLS; full?: (tool: string, args: unknown) => boolean }): { model: LanguageModel; tools: TOOLS } {
   // Tool call id → size of the step that asked for that expand, until it runs.
   const stepTokens = new Map<string, number>();
   const tools = Object.fromEntries(
@@ -35,7 +39,7 @@ export function withContextwaise<TOOLS extends ToolSet>(cw: Contextwaise, input:
           const own = t.toModelOutput ? await t.toModelOutput({ toolCallId, input: args, output }) : null;
           if (own && own.type !== "text" && own.type !== "json") return own; // images, files, denials: untouched
           const value = own ? own.value : output;
-          const result = await cw.shrink({ callId: toolCallId, tool: name, args, output: value, integration: "vercel-ai" });
+          const result = await cw.shrink({ callId: toolCallId, tool: name, args, output: value, integration: "vercel-ai", model: input.model.modelId, full: input.full?.(name, args) });
           return { type: "text" as const, value: result.text };
         },
       },
@@ -64,14 +68,22 @@ function lastUserText(prompt: unknown): string {
 }
 
 /**
- * Records, for every tool call in a model response, the user's request and the text the
- * model wrote before the call; for an expand, also the size of the step's prompt (an
- * estimate: a stream reports usage only after the tools have started).
+ * Records, for every tool call in a model response, the user's request, the text the model
+ * wrote before the call, and the size of the step's prompt (an estimate: a stream reports
+ * usage only after the tools have started). The size decides how much a cut must save, and
+ * for an expand, what the extra step it caused cost.
  */
 function intentMiddleware(cw: Contextwaise, stepTokens: Map<string, number>): LanguageModelMiddleware {
+  // One prompt per model response: measured once, on its first tool call.
+  const sizes = new WeakMap<object, number>();
+  const sizeOf = (prompt: unknown) => {
+    let size = sizes.get(prompt as object);
+    if (size === undefined) sizes.set(prompt as object, (size = tokens(JSON.stringify(prompt))));
+    return size;
+  };
   const noteCall = (part: { toolCallId: string; toolName: string }, text: string, prompt: unknown) => {
-    cw.noteIntent(part.toolCallId, text);
-    if (part.toolName === EXPAND_TOOL.name) stepTokens.set(part.toolCallId, tokens(JSON.stringify(prompt)));
+    cw.noteIntent(part.toolCallId, text, { contextTokens: sizeOf(prompt) });
+    if (part.toolName === EXPAND_TOOL.name) stepTokens.set(part.toolCallId, sizeOf(prompt));
   };
   return {
     wrapGenerate: async ({ doGenerate, params }) => {

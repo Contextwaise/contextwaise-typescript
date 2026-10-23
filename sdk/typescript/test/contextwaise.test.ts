@@ -290,3 +290,131 @@ test("the note says which items were cut and counts their values", async () => {
   assert.match(r.text, /… items 1-77 omitted/);
   assert.match(r.text, /Omitted: 149 items; status: delivered ×149; carrier: (DHL ×75, UPS ×74|UPS ×75, DHL ×74)\./);
 });
+
+// An MCP server describing one action: a long description and a large input schema, as a
+// Notion MCP returns for `notion-query-data-sources` called without params.
+const actionSchema = {
+  server: "notion",
+  action: "notion-query-data-sources",
+  description: "Query Notion data sources using faithful structured rows, SQL, or a saved view. ".repeat(40),
+  input_schema: {
+    jsonSchema: {
+      type: "object",
+      required: ["data_source_urls", "mode"],
+      properties: Object.fromEntries(
+        Array.from({ length: 30 }, (_, i) => [`param_${i}`, { type: "string", description: `Parameter ${i} of the query: ${"how rows are filtered and paged. ".repeat(12)}` }]),
+      ),
+    },
+  },
+};
+
+test("sections: a big JSON value is cut into path-named parts, so one property can be kept", async () => {
+  const { sections } = await import("@contextwaise/core");
+  const units = sections("json", JSON.stringify(actionSchema));
+  assert.ok(units.some((u) => u.startsWith('{"input_schema.jsonSchema.properties.param_7":')), "each schema property is its own part");
+  assert.ok(units.every((u) => tokens(u) <= 1000 || u.startsWith('{"description"')), "only an unsplittable string stays large");
+});
+
+test("expand: asked again about the same result, it returns parts not shown yet, then says so", async () => {
+  const cw = createContextwaise({ ...api, maxTokens: 300 });
+  const view = await cw.shrink({ callId: "c-schema", tool: "mcp_notion", args: { action: "notion-query-data-sources" }, output: actionSchema });
+  assert.equal(view.mode, "trimmed");
+  const question = "Show the input schema parameter list with how rows are filtered";
+  const answers: string[] = [];
+  for (let i = 0; i < 12; i++) answers.push(await cw.expand(view.ref, question));
+  const parts = (a: string) => a.split("\n").filter((l) => l.startsWith("{"));
+  assert.ok(parts(answers[0]).length > 0 && parts(answers[1]).length > 0);
+  assert.equal(parts(answers[0]).filter((p) => parts(answers[1]).includes(p)).length, 0, "the second answer repeats nothing");
+  assert.match(answers.at(-1)!, /already shown above/, "once every relevant part was sent, it says so instead of resending");
+});
+
+test("Vercel AI SDK: a call marked full reaches the model whole", async () => {
+  const cw = createContextwaise(api);
+  const mcp = tool({ inputSchema: jsonSchema<{ action?: string; params?: object }>({ type: "object" }), execute: async () => actionSchema });
+  const { tools } = withContextwaise(cw, { model: new MockLanguageModelV4(), tools: { mcp_notion: mcp }, full: (_tool, args) => (args as { params?: object }).params === undefined });
+  const describe = await tools.mcp_notion.toModelOutput!({ toolCallId: "d1", input: { action: "notion-query-data-sources" }, output: actionSchema });
+  assert.equal((describe as { value: string }).value, JSON.stringify(actionSchema), "describing an action: whole");
+  const run = await tools.mcp_notion.toModelOutput!({ toolCallId: "d2", input: { action: "notion-query-data-sources", params: { mode: "sql" } }, output: actionSchema });
+  assert.ok((run as { value: string }).value.length < JSON.stringify(actionSchema).length, "running it: shrunk as usual");
+});
+
+// A Notion MCP `notion-fetch` of one database, as the MCP client returns it: the data is one
+// JSON string inside the MCP envelope. Measured: ~2.2K tokens, cut to a 64-token empty view,
+// expanded at once in a 21K-token conversation.
+const notionFetch = {
+  content: [{
+    type: "text",
+    text: JSON.stringify({
+      metadata: { type: "database" },
+      title: "Gitmore",
+      url: "https://app.notion.com/p/2a1476bfc2af80cf962cea6e66fef4c0",
+      text: Array.from({ length: 60 }, (_, i) => `<property name="Field ${i}" type="select">option ${i} for the Gitmore roadmap board</property>`).join("\n"),
+    }),
+  }],
+};
+
+test("shapers: an MCP result is unwrapped, and the JSON string inside is cut like JSON", async () => {
+  const { sections } = await import("@contextwaise/core");
+  const shaped = shape(JSON.stringify(notionFetch));
+  assert.equal(shaped.kind, "json");
+  assert.ok(shaped.notes.includes("unwrapped the MCP result"));
+  const units = sections(shaped.kind, shaped.text);
+  assert.ok(units.length > 3 && units.every((u) => tokens(u) <= 600), "the long text field is cut into chunks");
+  assert.equal(shape(JSON.stringify({ content: [{ type: "text", text: "boom" }], isError: true })).text, "Error: boom");
+});
+
+test("a cut must save more in a long conversation: there, a wrong cut costs an expand resending it all", async () => {
+  const cw = createContextwaise({ ...api, maxTokens: 300 });
+  const args = { action: "notion-fetch", params: { id: "Gitmore" } };
+  cw.noteIntent("short", "Fetch the Gitmore roadmap", { contextTokens: 2_000 });
+  cw.noteIntent("long", "Fetch the Gitmore roadmap", { contextTokens: 21_000 });
+  const inShort = await cw.shrink({ callId: "short", tool: "mcp_notion", args, output: notionFetch });
+  const inLong = await cw.shrink({ callId: "long", tool: "mcp_notion", args, output: notionFetch });
+  assert.equal(inShort.mode, "trimmed", "a 2K-token conversation: cutting ~2K tokens pays");
+  assert.notEqual(inLong.mode, "trimmed", "a 21K-token conversation: the same cut would not pay for one expand");
+});
+
+test("a view that would keep nothing is not sent: the output is", async () => {
+  const cw = createContextwaise({ ...api, maxTokens: 200 });
+  const blob = "zzzz ".repeat(4000); // one paragraph, unrelated to the intent, far over budget
+  const view = await cw.shrink({ callId: "blob", tool: "dump", args: { q: "invoices" }, output: blob });
+  assert.notEqual(view.mode, "trimmed");
+  assert.ok(view.tokensAfter >= tokens(blob.trim()) - 1);
+});
+
+test("any tool output reaches the model: nothing a tool returns can break the step", async () => {
+  const cw = createContextwaise(api);
+  const circular: Record<string, unknown> = {};
+  circular.self = circular;
+  for (const [i, output] of [undefined, circular, { n: 10n }].entries()) {
+    const view = await cw.shrink({ callId: `odd${i}`, tool: "t", args: {}, output });
+    assert.equal(view.mode, "full");
+  }
+});
+
+const ordersOf = (n: number, extra: (i: number) => object = () => ({})) =>
+  Array.from({ length: n }, (_, i) => ({ id: `ORD-${1000 + i}`, customer: `Customer ${i}`, items: Array.from({ length: 4 }, (_, j) => ({ sku: `SKU-${i}-${j}`, name: `Product ${j} with a long name` })), ...extra(i) }));
+
+test("data in a format that isn't plain JSON is still cut to the relevant part", async () => {
+  const cw = createContextwaise({ ...api, maxTokens: 300 });
+  const json = JSON.stringify({ orders: ordersOf(80) });
+  const outputs = {
+    fenced: "```json\n" + json + "\n```",
+    prefixed: "Found 80 orders:\n" + json,
+    oneLine: ordersOf(300).map((o) => `${o.id} for ${o.customer}.`).join(" "),
+    xmlOneLine: `<orders>${ordersOf(200).map((o) => `<order id="${o.id}"><c>${o.customer}</c></order>`).join("")}</orders>`,
+  };
+  for (const [name, output] of Object.entries(outputs)) {
+    const view = await cw.shrink({ callId: name, tool: "lookup", args: { id: "ORD-1042" }, output });
+    assert.equal(view.mode, "trimmed", name);
+    assert.match(view.text, /ORD-1042/, name);
+  }
+});
+
+test("JSON items mentioning a failure are data, not errors: they don't crowd out the relevant item", async () => {
+  const cw = createContextwaise({ ...api, maxTokens: 300 });
+  const output = ordersOf(80, (i) => ({ payment: i % 2 ? "failed" : "ok" }));
+  const view = await cw.shrink({ callId: "pay", tool: "lookup", args: { id: "ORD-1042" }, output });
+  assert.equal(view.mode, "trimmed");
+  assert.match(view.text, /ORD-1042/);
+});

@@ -1,7 +1,7 @@
 // Run: npm test (in core/)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanCandidate, keepThreshold, normalizeCandidates, select, type Scored } from "../src/engine.ts";
+import { agentKey, cleanCandidate, keepThreshold, normalizeCandidates, select, type Scored } from "../src/engine.ts";
 
 const item = (id: string, text: string, score: number, tokens = 100): Scored => ({ id, text, source: "rag", tokens, score });
 
@@ -55,4 +55,9 @@ test("cleanup: structured noise is removed and measured against the size receive
   assert.ok(c.originalTokens! > c.text.length / 4 * 5, "savings measured against the original");
   const rag = { id: "r", text: "Refunds take five to seven business days to process.", source: "rag" };
   assert.deepEqual(cleanCandidate(rag), { ...rag, originalTokens: 13 });
+});
+
+test("agentKey: accents are dropped, not turned into dashes", () => {
+  assert.equal(agentKey("Geni Général"), "geni-general");
+  assert.equal(agentKey("  Support agent "), "support-agent");
 });

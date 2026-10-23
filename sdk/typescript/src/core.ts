@@ -50,8 +50,13 @@ export type ContextwaiseOptions = {
   onEvent?: (event: ContextwaiseEvent) => void;
 };
 
-/** `integration`: which adapter called (e.g. "vercel-ai"), shown on the dashboard. Direct calls report "core". */
-export type ShrinkInput = { callId: string; tool: string; args: unknown; output: unknown; integration?: string };
+/**
+ * `integration`: which adapter called (e.g. "vercel-ai"), shown on the dashboard. Direct calls report "core".
+ * `model`: the model id that will read the result (e.g. "claude-sonnet-4-5"), shown with the agent on the dashboard.
+ * `full`: this call's output must reach the model whole (a tool's schema, a list of actions to pick from),
+ * like the tools in the `full` option.
+ */
+export type ShrinkInput = { callId: string; tool: string; args: unknown; output: unknown; integration?: string; model?: string; full?: boolean };
 
 export type SectionLog = { preview: string; tokens: number; score: number; kept: boolean; reason: "relevant" | "error" | "preview" | "low_relevance" | "over_budget" };
 
@@ -91,8 +96,10 @@ export type Contextwaise = {
    * Records why the agent made a tool call: the text the model wrote just before it
    * ("let me find the auth middleware"). Arguments alone often don't say (`ls .`).
    * SDK adapters call this from the model's response; call it before the result is shrunk.
+   * `contextTokens`: the size of the prompt that made the call. A cut must save more the
+   * bigger it is, since a wrong cut costs an expand: one more model call resending all of it.
    */
-  noteIntent(callId: string, text: string): void;
+  noteIntent(callId: string, text: string, options?: { contextTokens?: number }): void;
   /**
    * The original output behind a ref, or its parts answering `question`.
    * `contextTokens`: input tokens of the model call that asked for this expand (the
@@ -128,6 +135,8 @@ export function createContextwaise(options: ContextwaiseOptions = {}): Contextwa
   const emit = options.onEvent ?? (() => {});
   const refs = new Map<string, string>(); // ref -> callId
   const intents = new Map<string, string>(); // callId -> what the model said before calling
+  const shown = new Map<string, Set<number>>(); // callId -> parts the model already has (view and expands)
+  const contexts = new Map<string, number>(); // callId -> tokens of the prompt that made the call
 
   const apiKey = options.apiKey ?? env("CONTEXTWAISE_API_KEY");
   const baseUrl = options.baseUrl ?? env("CONTEXTWAISE_URL");
@@ -142,17 +151,20 @@ export function createContextwaise(options: ContextwaiseOptions = {}): Contextwa
     }
     const started = performance.now();
     // Compact, as providers send a tool's JSON output: the honest size to measure savings against.
-    const original = typeof input.output === "string" ? input.output : JSON.stringify(input.output);
+    const original = serialize(input.output);
     const ref = `cw_${hash(input.callId)}`;
     const intent = [intents.get(input.callId), intentOf(input.tool, input.args)].filter(Boolean).join(" · ");
     intents.delete(input.callId);
+    const minSaving = Math.max(MIN_TRIM_SAVING, EXPAND_RISK * (contexts.get(input.callId) ?? 0));
+    contexts.delete(input.callId);
+    const worthCutting = (whole: number, cut: number) => whole - cut >= minSaving && whole - cut >= MIN_TRIM_SHARE * whole;
     const base = { ref, intent, tokensBefore: tokens(original), sections: [] as SectionLog[], scorer: "none" as const };
     const maxTokens = options.budgets?.[input.tool] ?? defaultBudget;
 
     // The view, from cheapest to most involved: untouched, noise removed, relevant parts.
     const decide = async (): Promise<ShrinkResult> => {
-      if (full.has(input.tool)) {
-        return { ...base, text: original, mode: "full", kind: "text", tokensAfter: tokens(original), notes: [`"${input.tool}" is set to always pass whole`] };
+      if (input.full || full.has(input.tool)) {
+        return { ...base, text: original, mode: "full", kind: "text", tokensAfter: tokens(original), notes: [input.full ? "this call is set to pass whole" : `"${input.tool}" is set to always pass whole`] };
       }
       const shaped = shape(original);
       const whole = (notes: string[], scorer: ShrinkResult["scorer"] = "none"): ShrinkResult => {
@@ -172,14 +184,21 @@ export function createContextwaise(options: ContextwaiseOptions = {}): Contextwa
       const uniform = Math.max(...scores) - Math.min(...scores) < 0.05;
       if (uniform && tokens(shaped.text) <= maxTokens * UNIFORM_KEEP_FACTOR) return whole([...shaped.notes, "every part equally relevant: kept whole"], "jev");
 
-      const picked = pick(units, scores, maxTokens);
-      const text = `${render(units, picked, shaped.kind)}\n${footer(ref, original, picked.filter((p) => p.kept).length, units.length, omittedSummary(units, picked, shaped.kind))}`;
+      const picked = pick(units, scores, maxTokens, shaped.kind);
+      // Nothing fits the budget (one part bigger than all of it): an empty view only sends the
+      // model to expand, one more call resending the conversation. Send the output instead.
+      if (!picked.some((p) => p.kept)) return whole(shaped.notes, "jev");
+      const text = `${render(units, picked, shaped.kind)}\n${footer(ref, original, picked.filter((p) => p.kept).length, units.length, omittedSummary(units, picked, shaped.kind), shaped.notes)}`;
       // Errors are kept over budget: the actual cut can be smaller than planned.
       if (!worthCutting(tokens(shaped.text), tokens(text))) return whole(shaped.notes, "jev");
       return { ...base, text, mode: "trimmed", kind: shaped.kind, tokensAfter: tokens(text), notes: shaped.notes, sections: picked, scorer: "jev" };
     };
 
-    let result = await decide();
+    // A view must never cost the agent its result: on any failure here, the output passes as is.
+    let result = await decide().catch((e: unknown): ShrinkResult => {
+      emit({ type: "engine_fallback", callId: input.callId, error: `shrink failed, output passed as is: ${e instanceof Error ? e.message : String(e)}` });
+      return { ...base, text: original, mode: "full", kind: "text", tokensAfter: tokens(original), notes: [] };
+    });
     // A view is only worth sending if it is smaller: otherwise send the original as is.
     if (result.mode !== "full" && result.tokensAfter >= result.tokensBefore) {
       result = { ...base, text: original, mode: "full", kind: result.kind, tokensAfter: tokens(original), notes: ["no smaller view possible: sent as is"] };
@@ -188,7 +207,7 @@ export function createContextwaise(options: ContextwaiseOptions = {}): Contextwa
     await ledger.set(input.callId, { tool: input.tool, original, result });
     const ms = Math.round(performance.now() - started);
     emit({ type: "shrink", callId: input.callId, tool: input.tool, result, ms });
-    backend?.report({ type: "result", callId: input.callId, tool: input.tool, integration: input.integration ?? "core", kind: result.kind, mode: result.mode, scorer: result.scorer, tokensBefore: result.tokensBefore, tokensAfter: result.tokensAfter, ms });
+    backend?.report({ type: "result", callId: input.callId, tool: input.tool, integration: input.integration ?? "core", ...(input.model && { model: input.model }), kind: result.kind, mode: result.mode, scorer: result.scorer, tokensBefore: result.tokensBefore, tokensAfter: result.tokensAfter, ms });
     return result;
   }
 
@@ -222,16 +241,29 @@ export function createContextwaise(options: ContextwaiseOptions = {}): Contextwa
     const units = cutSections(shaped.kind, shaped.text);
     // Each question is its own scoring decision, replayed by the API like any tool call.
     const scores = question ? await relevance(`${callId}:x${hash(question)}`, entry.tool, question, units) : null;
-    const text = scores
-      ? render(units, pick(units, scores, EXPAND_BUDGET), entry.result.kind)
+    // Parts the model already has, in the view or from an earlier expand, are not sent again:
+    // asked twice, expand returns the next most relevant parts, so a model that didn't get what
+    // it needed can't loop on the same answer (each loop is a model call resending everything).
+    const seen = shown.get(callId!) ?? new Set(entry.result.sections.flatMap((s, i) => (s.kept ? [i] : [])));
+    const picked = scores ? pick(units, scores, EXPAND_BUDGET, shaped.kind, seen) : null;
+    const nothingNew = picked !== null && seen.size > 0 && !picked.some((p) => p.kept && p.reason !== "preview");
+    if (picked && !nothingNew) {
+      picked.forEach((p, i) => p.kept && seen.add(i));
+      remember(shown, callId!, seen);
+    }
+    const text = nothingNew
+      ? `Nothing more in ${ref} matches that question: its relevant parts are already shown above.`
+      : picked
+      ? render(units, picked, entry.result.kind)
       : tokens(entry.original) <= EXPAND_BUDGET ? entry.original : `${entry.original.slice(0, EXPAND_BUDGET * 4)}\n… (truncated${question ? ": the part you asked for could not be found right now" : ": ask expand with a question to get a specific part"})`;
     emit({ type: "expand", ref, question, tokens: tokens(text) });
     backend?.report({ type: "expand", callId: callId!, tool: entry.tool, tokens: tokens(text), ...(contextTokens !== undefined && { contextTokens }) });
     return text;
   }
 
-  const noteIntent = (callId: string, text: string) => {
+  const noteIntent = (callId: string, text: string, { contextTokens }: { contextTokens?: number } = {}) => {
     if (text.trim()) remember(intents, callId, text.trim().slice(-500));
+    if (contextTokens) remember(contexts, callId, contextTokens);
   };
 
   return { shrink, expand, noteIntent, flush: async () => backend?.flush() };
@@ -287,12 +319,14 @@ function hash(text: string): string {
 // ---- selection ----
 
 /** Keeps error sections, then the most relevant ones, within budget; the rest is dropped. Order is preserved. */
-function pick(units: string[], scores: number[], budget: number): SectionLog[] {
+/** `exclude`: parts never to pick (already shown to the model). */
+function pick(units: string[], scores: number[], budget: number, kind: Kind, exclude?: ReadonlySet<number>): SectionLog[] {
   const logs: SectionLog[] = units.map((u, i) => ({ preview: u.slice(0, 120), tokens: tokens(u), score: round(scores[i]), kept: false, reason: "low_relevance" }));
   let used = 0;
-  const order = units.map((_, i) => i).sort((a, b) => Number(isErrorBlock(units[b])) - Number(isErrorBlock(units[a])) || scores[b] - scores[a] || a - b);
+  const order = units.map((_, i) => i).sort((a, b) => Number(isErrorUnit(units[b], kind)) - Number(isErrorUnit(units[a], kind)) || scores[b] - scores[a] || a - b);
   for (const i of order) {
-    const error = isErrorBlock(units[i]);
+    if (exclude?.has(i)) continue;
+    const error = isErrorUnit(units[i], kind);
     if (!error && scores[i] < MIN_RELEVANCE) continue;
     if (used + logs[i].tokens > budget && used > 0) {
       logs[i].reason = "over_budget";
@@ -304,8 +338,8 @@ function pick(units: string[], scores: number[], budget: number): SectionLog[] {
   // Nothing matched the intent: show the start rather than an empty view, so the
   // model sees what kind of output this is and can expand with a better question.
   if (!logs.some((l) => l.kept && l.reason === "relevant")) {
-    for (const l of logs) {
-      if (l.kept) continue;
+    for (const [i, l] of logs.entries()) {
+      if (l.kept || exclude?.has(i)) continue;
       if (used + l.tokens > budget / 2) break;
       used += l.tokens;
       Object.assign(l, { kept: true, reason: "preview" });
@@ -319,18 +353,24 @@ function pick(units: string[], scores: number[], budget: number): SectionLog[] {
 // call resending the whole conversation: a small saving can't pay for that risk.
 const MIN_TRIM_SAVING = 1000;
 const MIN_TRIM_SHARE = 0.3;
-
-/** Whether a view of `cut` tokens saves enough over sending `whole` tokens. */
-function worthCutting(whole: number, cut: number): boolean {
-  const saving = whole - cut;
-  return saving >= MIN_TRIM_SAVING && saving >= MIN_TRIM_SHARE * whole;
-}
+// When the prompt size is known, a cut must also save this share of it: about what a wrong
+// cut costs (one expand resends the prompt) times how often cuts get expanded, with margin.
+// Measured: a 2.2K result cut to save 2.1K tokens in a 21K conversation, expanded at once.
+const EXPAND_RISK = 0.25;
 
 // Below this a section is noise for the current intent: the API's Jev scores put
 // "loosely related, not needed" up to ~0.4 and "useful evidence" from 0.5.
 const MIN_RELEVANCE = 0.45;
 
-const isErrorBlock = (u: string) => u.split("\n").some(isErrorLine);
+/**
+ * A part reporting a problem, kept first. In JSON only an error field counts: an item that merely
+ * mentions one ("payment": "failed", "timeout": 30) is data, and would crowd out the relevant ones.
+ */
+function isErrorUnit(unit: string, kind: Kind): boolean {
+  if (kind !== "json") return unit.split("\n").some(isErrorLine);
+  const value: unknown = JSON.parse(unit);
+  return !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).some((k) => /^(errors?|exception|fault)\b/i.test(k));
+}
 
 /**
  * The kept sections in their original order, each gap shown as one line saying which
@@ -414,8 +454,8 @@ function record(unit: string): Record<string, unknown> | null {
  * Only trimmed views invite expand: an invitation on a view that lost nothing but
  * noise makes careful models spend a whole extra round trip to "check for more".
  */
-function footer(ref: string, original: string, kept: number, total: number, omitted: string): string {
-  return `[contextwaise: kept the ${kept} of ${total} parts relevant to this step (of ${tokens(original)} tokens).${omitted ? ` Omitted: ${omitted}.` : ""} If you need an omitted part, call expand({ ref: "${ref}", question: "<what you need>" })]`;
+function footer(ref: string, original: string, kept: number, total: number, omitted: string, notes: string[]): string {
+  return `[contextwaise: kept the ${kept} of ${total} parts relevant to this step (of ${tokens(original)} tokens).${omitted ? ` Omitted: ${omitted}.` : ""}${notes.length ? ` Also ${notes.join("; ")}.` : ""} If you need an omitted part, call expand({ ref: "${ref}", question: "<what you need>" })]`;
 }
 
 /** What the agent was after when it called the tool: the tool name and every argument value. */
@@ -430,3 +470,13 @@ function intentOf(tool: string, args: unknown): string {
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;
+
+/** A tool's output as the model would get it: text as is, anything else as JSON (`undefined` as null, BigInt as digits). */
+function serialize(output: unknown): string {
+  if (typeof output === "string") return output;
+  try {
+    return JSON.stringify(output ?? null, (_, v) => (typeof v === "bigint" ? v.toString() : v));
+  } catch {
+    return String(output); // circular: no provider could send it as JSON either
+  }
+}

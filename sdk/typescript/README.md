@@ -83,7 +83,7 @@ With an API key, the SDK makes two kinds of calls to your Contextwaise app:
 | Call | When | What is sent | What the app keeps |
 |---|---|---|---|
 | **Scoring** | Only when a cleaned tool output is larger than its budget, and when the agent calls `expand` with a question | The tool call id and tool name; the intent (the user's latest message, any text the model wrote before the call, and the call's argument values); and the cleaned output in sections, with dates, times, long numbers and hex ids removed | The scores (cached 7 days by call id, so a replay gets the same view) and a usage record: tool name, call id, token counts. **No text is stored.** |
-| **Reports** | After every tool result and every `expand` | Tool name, call id, sizes, mode and timing; for an `expand`, the input size of the model call that asked for it | All of it, for your dashboard. Reports never contain tool output or intent. |
+| **Reports** | After every tool result and every `expand` | Tool name, call id, sizes, mode and timing, and the model id with the Vercel AI SDK; for an `expand`, the input size of the model call that asked for it | All of it, for your dashboard. Reports never contain tool output or intent. |
 
 To score, the app forwards the intent and sections to **TypeSafe (Jev)**, its relevance model. Outputs that fit their budget, tools listed in `full`, and replays are never sent anywhere.
 
