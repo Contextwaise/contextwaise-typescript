@@ -5,13 +5,15 @@
 // - scoring has a short timeout; after a failure the API is skipped for a while and
 //   the model gets the cleaned output whole instead (nothing cut);
 // - reports are batched, sent in the background, and dropped if they can't be sent.
-//   They carry sizes and tool names only, never tool output.
+//   They carry sizes, tool names and the model id only, never tool output.
 
 export type ResultReport = {
   type: "result";
   callId: string;
   tool: string;
   integration: string;
+  /** The model id that reads the result, when the adapter knows it. */
+  model?: string;
   kind: string;
   mode: "full" | "shaped" | "trimmed";
   scorer: "jev" | "none";
@@ -55,6 +57,11 @@ export function connectBackend(opts: { apiKey: string; baseUrl: string; agent?: 
         body: JSON.stringify({ ...input, intent: input.intent.slice(0, 4000), agent: opts.agent }),
         signal: AbortSignal.timeout(SCORE_TIMEOUT_MS),
       });
+      // A request the API rejects (too big, malformed) is this call's problem: the next one may score fine.
+      if ([400, 413, 422].includes(res.status)) {
+        opts.onError(`relevance API rejected this result, passed whole: HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
+        return null;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
       const body = (await res.json()) as { scores?: number[] };
       if (body.scores?.length !== input.sections.length) throw new Error("the API returned a score per section count that doesn't match");

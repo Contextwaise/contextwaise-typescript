@@ -50,7 +50,8 @@ export class InputError extends Error {}
 
 /** Agent names become Mongo field names, so keep them to a safe charset. */
 export function agentKey(name: unknown): string {
-  const s = typeof name === "string" ? name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40) : "";
+  // Accents are dropped, not replaced: "Géni Général" is "geni-general", not "g-ni-g-n-ral".
+  const s = typeof name === "string" ? name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40) : "";
   return s || "default";
 }
 

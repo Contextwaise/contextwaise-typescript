@@ -5,9 +5,12 @@ import assert from "node:assert/strict";
 import { createContextwaise } from "../src/index.ts";
 import { expandTool as anthropicExpand, toolResults } from "../src/anthropic.ts";
 import { expandTool as chatExpand, expandToolResponses, functionOutputs, toolMessages } from "../src/openai.ts";
+import { withContextwaise } from "../src/ai-sdk.ts";
+import { jsonSchema, tool } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
 
 const intents: string[] = [];
-const reports: { type: string; contextTokens?: number }[] = [];
+const reports: { type: string; contextTokens?: number; integration?: string; model?: string }[] = [];
 beforeEach(() => {
   intents.length = 0;
   reports.length = 0;
@@ -108,4 +111,16 @@ test("replayed views: the same call id gives the same bytes, for every adapter",
   const a = await toolResults(cw, response, run, { request: "ORD-1337" });
   const b = await toolResults(cw, response, run, { request: "ORD-1337" });
   assert.equal(a[0].content, b[0].content);
+});
+
+test("Vercel AI SDK: reports which model reads the result", async () => {
+  const cw = createContextwaise(api);
+  const getOrders = tool({ inputSchema: jsonSchema<Record<string, never>>({ type: "object" }), execute: async () => orders });
+  const { tools } = withContextwaise(cw, { model: new MockLanguageModelV4({ modelId: "claude-sonnet-4-5" }), tools: { get_orders: getOrders } });
+  await tools.get_orders.toModelOutput!({ toolCallId: "call_1", input: {}, output: orders });
+  await cw.flush();
+  assert.deepEqual(
+    reports.filter((r) => r.type === "result").map((r) => [r.integration, r.model]),
+    [["vercel-ai", "claude-sonnet-4-5"]],
+  );
 });

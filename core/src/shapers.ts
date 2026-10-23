@@ -20,9 +20,50 @@ const ERROR_LINE = /\b(error|fail(ed|ure)?|exception|traceback|panic|fatal|denie
 /** Whether a line reports a problem: such lines are always kept. */
 export const isErrorLine = (line: string) => ERROR_LINE.test(line);
 
+/**
+ * MCP tools wrap their result: {"content":[{"type":"text","text":"…"}]}, the data inside as one
+ * string (often JSON). Left wrapped, it is a single unsplittable part: over any budget, so a cut
+ * keeps nothing. Unwrapped, it is cleaned and cut like any output. Results with images or other
+ * non-text parts stay as they are.
+ */
+function unwrapMcp(raw: string, notes: string[]): string {
+  if (!raw.trimStart().startsWith("{") || !raw.includes('"content"')) return raw;
+  let value: { content?: unknown; isError?: unknown };
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+  const parts = Array.isArray(value?.content) ? (value.content as { type?: unknown; text?: unknown }[]) : [];
+  if (!parts.length || !parts.every((p) => p?.type === "text" && typeof p.text === "string")) return raw;
+  notes.push("unwrapped the MCP result");
+  const text = parts.map((p) => p.text as string).join("\n\n");
+  return value.isError === true ? `Error: ${text}` : text;
+}
+
+/**
+ * JSON inside a code fence, or after a short line of text ("Found 80 orders:"), as some tools and
+ * MCP servers return it. Left as text it is one part, over any budget, so never cut. The text
+ * around it is kept as a note; one reporting an error keeps the output as text.
+ */
+function unwrapJson(text: string, notes: string[]): string {
+  const fenced = /^```[\w-]*\n([\s\S]*)\n```$/.exec(text);
+  if (fenced && isJson(fenced[1].trim())) {
+    notes.push("removed the code fence around the JSON");
+    return fenced[1].trim();
+  }
+  const start = text.search(/^[[{]/m);
+  if (start <= 0 || start > 300) return text;
+  const before = text.slice(0, start).trim();
+  const json = text.slice(start).trim();
+  if (isErrorLine(before) || !isJson(json)) return text;
+  notes.push(`text before the JSON: "${before}"`);
+  return json;
+}
+
 export function shape(raw: string): Shaped {
   const notes: string[] = [];
-  let text = stripTerminalNoise(raw, notes);
+  let text = unwrapJson(stripTerminalNoise(unwrapMcp(raw, notes), notes), notes);
   const kind = detect(text);
   if (kind === "json") text = shapeJson(text, notes);
   else if (kind === "html") text = shapeHtml(text, notes);
@@ -32,15 +73,80 @@ export function shape(raw: string): Shaped {
   return { kind, text, notes };
 }
 
-/** Cuts shaped text into the units relevance is judged on. */
+// No part is bigger than this: a JSON part is cut into its keys or items, named by path
+// (`input_schema.properties.mode`), text into lines, a long line into pieces. Whole, a part
+// over the budget is never kept: a tool's 15K-token schema, an XML or minified document on one
+// line, passed whole or left the agent expanding for everything but it.
+const MAX_PART_TOKENS = 500;
+
+/** `value` under `path` as one unit, or as its children's units when it is too big. */
+function jsonParts(path: string, value: unknown): string[] {
+  const part = JSON.stringify({ [path]: value });
+  if (tokens(part) <= MAX_PART_TOKENS) return [part];
+  if (typeof value === "string") {
+    // JSON stored as a string (an API embedding a document) is cut like JSON; long text by lines.
+    const inner = parseJsonString(value);
+    return inner === undefined ? textChunks(value).map((chunk, i, all) => JSON.stringify({ [all.length > 1 ? `${path} (${i + 1}/${all.length})` : path]: chunk })) : jsonParts(path, inner);
+  }
+  if (!value || typeof value !== "object") return [part];
+  const children = Array.isArray(value) ? value.map((v, i) => [`${path}[${i}]`, v] as const) : Object.entries(value).map(([k, v]) => [`${path}.${k}`, v] as const);
+  return children.length ? children.flatMap(([p, v]) => jsonParts(p, v)) : [part];
+}
+
+function parseJsonString(text: string): object | undefined {
+  const t = text.trim();
+  if (!t.startsWith("{") && !t.startsWith("[")) return undefined;
+  try {
+    const value = JSON.parse(t);
+    return value && typeof value === "object" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Consecutive lines packed into chunks of about MAX_PART_TOKENS; a longer line is cut into pieces. */
+function textChunks(text: string): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  for (const line of text.split("\n").flatMap(lineChunks)) {
+    if (current && tokens(current) + tokens(line) > MAX_PART_TOKENS) {
+      chunks.push(current);
+      current = line;
+    } else current = current ? `${current}\n${line}` : line;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+/** A line cut into pieces of at most MAX_PART_TOKENS, each ending at a space or tag when there is one. */
+function lineChunks(line: string): string[] {
+  const max = MAX_PART_TOKENS * 4;
+  const pieces: string[] = [];
+  let rest = line;
+  while (rest.length > max) {
+    const window = rest.slice(0, max);
+    const cut = Math.max(window.lastIndexOf(" "), window.lastIndexOf(">"), window.lastIndexOf(","));
+    const end = cut > max / 2 ? cut + 1 : max;
+    pieces.push(rest.slice(0, end));
+    rest = rest.slice(end);
+  }
+  return [...pieces, rest];
+}
+
+/** Cuts shaped text into the units relevance is judged on, none over MAX_PART_TOKENS. */
 export function sections(kind: Kind, text: string): string[] {
+  const units = cut(kind, text);
+  return kind === "json" ? units : units.flatMap((u) => (tokens(u) <= MAX_PART_TOKENS ? [u] : textChunks(u)));
+}
+
+function cut(kind: Kind, text: string): string[] {
   if (kind === "json") {
     const value = JSON.parse(text);
-    if (Array.isArray(value)) return value.map((v) => JSON.stringify(v));
+    if (Array.isArray(value)) return value.flatMap((v, i) => (tokens(JSON.stringify(v)) <= MAX_PART_TOKENS ? [JSON.stringify(v)] : jsonParts(`[${i}]`, v)));
     // API envelopes ({ meta, orders: [...] }) put the data in an array under one key:
     // each item becomes its own unit (keyed `orders[3]`), or the whole array would be one part.
     if (value && typeof value === "object")
-      return Object.entries(value).flatMap(([k, v]) => (Array.isArray(v) && v.length > 1 ? v.map((item, i) => JSON.stringify({ [`${k}[${i}]`]: item })) : [JSON.stringify({ [k]: v })]));
+      return Object.entries(value).flatMap(([k, v]) => (Array.isArray(v) && v.length > 1 ? v.flatMap((item, i) => jsonParts(`${k}[${i}]`, item)) : jsonParts(k, v)));
   }
   if (kind === "listing" || kind === "log" || kind === "lines") return text.split("\n").filter((l) => l.trim()); // listing: one directory per line
   if (kind === "test") return text.split(/\n(?=\S)/).filter((b) => b.trim()); // one block per unindented line
