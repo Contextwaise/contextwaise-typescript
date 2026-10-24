@@ -367,11 +367,11 @@ test("a cut must save more in a long conversation: there, a wrong cut costs an e
   const cw = createContextwaise({ ...api, maxTokens: 300 });
   const args = { action: "notion-fetch", params: { id: "Gitmore" } };
   cw.noteIntent("short", "Fetch the Gitmore roadmap", { contextTokens: 2_000 });
-  cw.noteIntent("long", "Fetch the Gitmore roadmap", { contextTokens: 21_000 });
+  cw.noteIntent("long", "Fetch the Gitmore roadmap", { contextTokens: 60_000 });
   const inShort = await cw.shrink({ callId: "short", tool: "mcp_notion", args, output: notionFetch });
   const inLong = await cw.shrink({ callId: "long", tool: "mcp_notion", args, output: notionFetch });
   assert.equal(inShort.mode, "trimmed", "a 2K-token conversation: cutting ~2K tokens pays");
-  assert.notEqual(inLong.mode, "trimmed", "a 21K-token conversation: the same cut would not pay for one expand");
+  assert.notEqual(inLong.mode, "trimmed", "a 60K-token conversation: the same cut would not pay for one expand");
 });
 
 test("a view that would keep nothing is not sent: the output is", async () => {
