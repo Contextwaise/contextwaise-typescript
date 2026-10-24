@@ -78,19 +78,23 @@ export function shape(raw: string): Shaped {
 // over the budget is never kept: a tool's 15K-token schema, an XML or minified document on one
 // line, passed whole or left the agent expanding for everything but it.
 const MAX_PART_TOKENS = 500;
+// A list item is a record (an order, a row, a page): judged whole up to this size, so relevance
+// reads one order with its notes, not its `created_time`, `id` and `in_trash` fields apart. API
+// records run large (a Notion page object is ~700-1,300 tokens).
+const MAX_RECORD_TOKENS = 2500;
 
-/** `value` under `path` as one unit, or as its children's units when it is too big. */
-function jsonParts(path: string, value: unknown): string[] {
+/** `value` under `path` as one unit, or as its children's units when it is over `limit` tokens. */
+function jsonParts(path: string, value: unknown, limit = MAX_PART_TOKENS): string[] {
   const part = JSON.stringify({ [path]: value });
-  if (tokens(part) <= MAX_PART_TOKENS) return [part];
+  if (tokens(part) <= limit) return [part];
   if (typeof value === "string") {
     // JSON stored as a string (an API embedding a document) is cut like JSON; long text by lines.
     const inner = parseJsonString(value);
     return inner === undefined ? textChunks(value).map((chunk, i, all) => JSON.stringify({ [all.length > 1 ? `${path} (${i + 1}/${all.length})` : path]: chunk })) : jsonParts(path, inner);
   }
   if (!value || typeof value !== "object") return [part];
-  const children = Array.isArray(value) ? value.map((v, i) => [`${path}[${i}]`, v] as const) : Object.entries(value).map(([k, v]) => [`${path}.${k}`, v] as const);
-  return children.length ? children.flatMap(([p, v]) => jsonParts(p, v)) : [part];
+  const children = Array.isArray(value) ? value.map((v, i) => [`${path}[${i}]`, v, MAX_RECORD_TOKENS] as const) : Object.entries(value).map(([k, v]) => [`${path}.${k}`, v, MAX_PART_TOKENS] as const);
+  return children.length ? children.flatMap(([p, v, max]) => jsonParts(p, v, max)) : [part];
 }
 
 function parseJsonString(text: string): object | undefined {
@@ -142,11 +146,11 @@ export function sections(kind: Kind, text: string): string[] {
 function cut(kind: Kind, text: string): string[] {
   if (kind === "json") {
     const value = JSON.parse(text);
-    if (Array.isArray(value)) return value.flatMap((v, i) => (tokens(JSON.stringify(v)) <= MAX_PART_TOKENS ? [JSON.stringify(v)] : jsonParts(`[${i}]`, v)));
+    if (Array.isArray(value)) return value.flatMap((v, i) => (tokens(JSON.stringify(v)) <= MAX_RECORD_TOKENS ? [JSON.stringify(v)] : jsonParts(`[${i}]`, v)));
     // API envelopes ({ meta, orders: [...] }) put the data in an array under one key:
     // each item becomes its own unit (keyed `orders[3]`), or the whole array would be one part.
     if (value && typeof value === "object")
-      return Object.entries(value).flatMap(([k, v]) => (Array.isArray(v) && v.length > 1 ? v.flatMap((item, i) => jsonParts(`${k}[${i}]`, item)) : jsonParts(k, v)));
+      return Object.entries(value).flatMap(([k, v]) => (Array.isArray(v) && v.length > 1 ? v.flatMap((item, i) => jsonParts(`${k}[${i}]`, item, MAX_RECORD_TOKENS)) : jsonParts(k, v)));
   }
   if (kind === "listing" || kind === "log" || kind === "lines") return text.split("\n").filter((l) => l.trim()); // listing: one directory per line
   if (kind === "test") return text.split(/\n(?=\S)/).filter((b) => b.trim()); // one block per unindented line

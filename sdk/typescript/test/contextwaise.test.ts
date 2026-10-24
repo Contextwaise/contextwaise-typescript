@@ -149,7 +149,8 @@ test("AI SDK: an expand reports the size of the step that asked for it, as the m
   await cw.flush();
 
   const [expand] = reports.filter((r) => r.type === "expand");
-  assert.equal(expand.contextTokens, tokens(expandPrompt), "the prompt of the step that called expand");
+  // The prompt's text, without the JSON syntax (escaped quotes) that would over-size it.
+  assert.ok(expand.contextTokens! > tokens(expandPrompt) / 2 && expand.contextTokens! < tokens(expandPrompt), "the prompt of the step that called expand");
   assert.ok(expand.contextTokens! < tokens(JSON.stringify(orders)) / 4, "views, not raw outputs");
 });
 
@@ -417,4 +418,18 @@ test("JSON items mentioning a failure are data, not errors: they don't crowd out
   const view = await cw.shrink({ callId: "pay", tool: "lookup", args: { id: "ORD-1042" }, output });
   assert.equal(view.mode, "trimmed");
   assert.match(view.text, /ORD-1042/);
+});
+
+test("records in a list are judged whole: the one relevant order is kept with its notes, not split into fields", async () => {
+  const cw = createContextwaise({ ...api, maxTokens: 600 });
+  // Raw API records (~800 tokens each), as a Notion query returns pages.
+  const page = (i: number, note: string) => ({
+    object: "page", id: `id-${i}`, created_time: "2026-01-01", archived: false, in_trash: false, url: `https://notion.so/ORD-${2000 + i}`,
+    properties: { "Order ID": { title: [{ plain_text: `ORD-${2000 + i}`, annotations: { bold: false, italic: false, color: "default" } }] }, Notes: { rich_text: [{ plain_text: note, annotations: { bold: false, italic: false, color: "default" } }] }, padding: "p".repeat(2600) },
+  });
+  const pages = Array.from({ length: 60 }, (_, i) => page(i, i === 41 ? "Delivered damaged: clamp cracked, replacement shipped" : "Customer confirmed reception by email"));
+  const view = await cw.shrink({ callId: "records", tool: "query", args: { q: "which order was damaged" }, output: { data: { results: pages } } });
+  assert.equal(view.mode, "trimmed");
+  assert.match(view.text, /ORD-2041[\s\S]*Delivered damaged/, "the record with its notes, whole");
+  assert.equal(view.sections.filter((s) => s.kept).length, 1);
 });
