@@ -59,6 +59,18 @@ export function withContextwaise<TOOLS extends ToolSet>(cw: Contextwaise, input:
   return { model: wrapLanguageModel({ model: input.model, middleware: intentMiddleware(cw, stepTokens) }), tools: { ...tools, expand } as TOOLS };
 }
 
+/**
+ * Characters of text in a prompt: every string in it, without JSON syntax. Measured as JSON, a
+ * prompt holding JSON tool results counted each of their quotes twice (escaped), over-sizing the
+ * conversation and so blocking cuts that would pay.
+ */
+function textLength(value: unknown): number {
+  if (typeof value === "string") return value.length;
+  if (Array.isArray(value)) return value.reduce((n: number, v) => n + textLength(v), 0);
+  if (value && typeof value === "object") return Object.values(value).reduce((n: number, v) => n + textLength(v), 0);
+  return 0;
+}
+
 /** The user's latest message in a prompt: what the whole agent turn is for. */
 function lastUserText(prompt: unknown): string {
   const messages = prompt as { role: string; content: string | { type: string; text?: string }[] }[];
@@ -78,7 +90,7 @@ function intentMiddleware(cw: Contextwaise, stepTokens: Map<string, number>): La
   const sizes = new WeakMap<object, number>();
   const sizeOf = (prompt: unknown) => {
     let size = sizes.get(prompt as object);
-    if (size === undefined) sizes.set(prompt as object, (size = tokens(JSON.stringify(prompt))));
+    if (size === undefined) sizes.set(prompt as object, (size = Math.ceil(textLength(prompt) / 4)));
     return size;
   };
   const noteCall = (part: { toolCallId: string; toolName: string }, text: string, prompt: unknown) => {

@@ -218,8 +218,7 @@ export function createContextwaise(options: ContextwaiseOptions = {}): Contextwa
     // listings) would cost several times the text itself (measured: 8.9x for a
     // 1,214-line log). Score consecutive groups instead, each line taking its group's
     // score; errors are still kept on their own.
-    const groupCount = Math.min(MAX_REMOTE_SECTIONS, Math.max(1, Math.ceil(tokens(units.join("\n")) / MIN_GROUP_TOKENS)));
-    const groups = groupConsecutive(units, groupCount);
+    const groups = groupConsecutive(units, MAX_REMOTE_SECTIONS);
     // The API rejects a section over MAX_SECTION_CHARS, which would turn relevance off for
     // the whole result: a single huge unit (one minified blob) is scored on its start instead.
     const scores = await backend.score({ callId, tool, intent, sections: groups.map((g) => forScoring(g.text, intent).slice(0, MAX_SECTION_CHARS)) });
@@ -300,9 +299,20 @@ function forScoring(text: string, intent: string): string {
     .replace(/[ \t]{2,}/g, " ");
 }
 
-/** Joins consecutive units into at most `max` groups of similar size; `end` is each group's exclusive end index. */
+/**
+ * Joins consecutive units into groups of about MIN_GROUP_TOKENS, at most `max`; `end` is each
+ * group's exclusive end index. Packed by size, not count: short lines share a group (one Jev
+ * question for many), while a unit that is big on its own (a record) is scored alone, never
+ * tied with its neighbour.
+ */
 function groupConsecutive(units: string[], max: number): { text: string; end: number }[] {
-  if (units.length <= max) return units.map((text, i) => ({ text, end: i + 1 }));
+  const packed: { text: string; end: number }[] = [];
+  units.forEach((u, i) => {
+    const last = packed.at(-1);
+    if (last && tokens(last.text) + tokens(u) <= MIN_GROUP_TOKENS) Object.assign(last, { text: `${last.text}\n${u}`, end: i + 1 });
+    else packed.push({ text: u, end: i + 1 });
+  });
+  if (packed.length <= max) return packed;
   const size = Math.ceil(units.length / max);
   const groups: { text: string; end: number }[] = [];
   for (let i = 0; i < units.length; i += size) groups.push({ text: units.slice(i, i + size).join("\n"), end: Math.min(i + size, units.length) });
