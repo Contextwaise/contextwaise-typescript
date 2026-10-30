@@ -23,10 +23,12 @@ import { EXPAND_TOOL } from "./tool-calls.ts";
 type ModelV4 = Parameters<typeof wrapLanguageModel>[0]["model"];
 
 /**
- * `full`: calls whose output must reach the model whole, e.g. a tool listing its actions or
- * returning a schema the next call must follow exactly. Cut, the agent expands it back piece by piece.
+ * `full`: calls whose output must reach the model whole, e.g. a file the agent will edit. Schemas
+ * and lists of actions are detected and passed whole on their own.
+ * `agent`: the agent these tools belong to, for apps hosting many agents on one client (each run
+ * wraps its own tools, so each agent's results are grouped under its own name). Default: the client's.
  */
-export function withContextwaise<TOOLS extends ToolSet>(cw: Contextwaise, input: { model: ModelV4; tools: TOOLS; full?: (tool: string, args: unknown) => boolean }): { model: LanguageModel; tools: TOOLS } {
+export function withContextwaise<TOOLS extends ToolSet>(cw: Contextwaise, input: { model: ModelV4; tools: TOOLS; full?: (tool: string, args: unknown) => boolean; agent?: string }): { model: LanguageModel; tools: TOOLS } {
   // Tool call id → size of the step that asked for that expand, until it runs.
   const stepTokens = new Map<string, number>();
   const tools = Object.fromEntries(
@@ -39,7 +41,7 @@ export function withContextwaise<TOOLS extends ToolSet>(cw: Contextwaise, input:
           const own = t.toModelOutput ? await t.toModelOutput({ toolCallId, input: args, output }) : null;
           if (own && own.type !== "text" && own.type !== "json") return own; // images, files, denials: untouched
           const value = own ? own.value : output;
-          const result = await cw.shrink({ callId: toolCallId, tool: name, args, output: value, integration: "vercel-ai", model: input.model.modelId, full: input.full?.(name, args) });
+          const result = await cw.shrink({ callId: toolCallId, tool: name, args, output: value, integration: "vercel-ai", model: input.model.modelId, full: input.full?.(name, args), agent: input.agent });
           return { type: "text" as const, value: result.text };
         },
       },

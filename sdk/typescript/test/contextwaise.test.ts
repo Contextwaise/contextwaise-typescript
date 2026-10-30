@@ -309,6 +309,9 @@ const actionSchema = {
   },
 };
 
+// The same text as data rather than a schema (no `type: "object"` + `properties`): cut like any result.
+const queryRows = { description: actionSchema.description, rows: actionSchema.input_schema.jsonSchema.properties };
+
 test("sections: a big JSON value is cut into path-named parts, so one property can be kept", async () => {
   const { sections } = await import("@contextwaise/core");
   const units = sections("json", JSON.stringify(actionSchema));
@@ -318,7 +321,7 @@ test("sections: a big JSON value is cut into path-named parts, so one property c
 
 test("expand: asked again about the same result, it returns parts not shown yet, then says so", async () => {
   const cw = createContextwaise({ ...api, maxTokens: 300 });
-  const view = await cw.shrink({ callId: "c-schema", tool: "mcp_notion", args: { action: "notion-query-data-sources" }, output: actionSchema });
+  const view = await cw.shrink({ callId: "c-schema", tool: "mcp_notion", args: { action: "notion-query-data-sources" }, output: queryRows });
   assert.equal(view.mode, "trimmed");
   const question = "Show the input schema parameter list with how rows are filtered";
   const answers: string[] = [];
@@ -335,8 +338,8 @@ test("Vercel AI SDK: a call marked full reaches the model whole", async () => {
   const { tools } = withContextwaise(cw, { model: new MockLanguageModelV4(), tools: { mcp_notion: mcp }, full: (_tool, args) => (args as { params?: object }).params === undefined });
   const describe = await tools.mcp_notion.toModelOutput!({ toolCallId: "d1", input: { action: "notion-query-data-sources" }, output: actionSchema });
   assert.equal((describe as { value: string }).value, JSON.stringify(actionSchema), "describing an action: whole");
-  const run = await tools.mcp_notion.toModelOutput!({ toolCallId: "d2", input: { action: "notion-query-data-sources", params: { mode: "sql" } }, output: actionSchema });
-  assert.ok((run as { value: string }).value.length < JSON.stringify(actionSchema).length, "running it: shrunk as usual");
+  const run = await tools.mcp_notion.toModelOutput!({ toolCallId: "d2", input: { action: "notion-query-data-sources", params: { mode: "sql" } }, output: queryRows });
+  assert.ok((run as { value: string }).value.length < JSON.stringify(queryRows).length, "running it: shrunk as usual");
 });
 
 // A Notion MCP `notion-fetch` of one database, as the MCP client returns it: the data is one
@@ -432,4 +435,29 @@ test("records in a list are judged whole: the one relevant order is kept with it
   assert.equal(view.mode, "trimmed");
   assert.match(view.text, /ORD-2041[\s\S]*Delivered damaged/, "the record with its notes, whole");
   assert.equal(view.sections.filter((s) => s.kept).length, 1);
+});
+
+test("schemas and lists of actions pass whole without being marked, even in an MCP envelope; data with a `properties` field is still cut", async () => {
+  const cw = createContextwaise({ ...api, maxTokens: 200 });
+  const actions = Array.from({ length: 60 }, (_, i) => ({ name: `notion-action-${i}`, description: `Does thing ${i} in the workspace, with options`, inputSchema: { type: "object", properties: { query: { type: "string", description: `query for ${i}` }, limit: { type: "number" } }, required: ["query"] } }));
+  const mcp = { content: [{ type: "text", text: JSON.stringify({ tools: actions }) }] };
+  const r = await cw.shrink({ callId: "schema", tool: "mcp_notion", args: {}, output: mcp });
+  assert.deepEqual([r.mode, r.reason], ["full", "schema"]);
+  assert.match(r.text, /notion-action-59/);
+
+  const d = await cw.shrink({ callId: "pages", tool: "mcp_notion", args: { query: "gitmore" }, output: notionPages });
+  assert.deepEqual([d.mode, d.reason], ["trimmed", "cut"]);
+});
+const notionPages = Array.from({ length: 80 }, (_, i) => ({ id: `page-${i}`, properties: { title: i === 42 ? "Gitmore roadmap" : `Meeting notes ${i}`, status: "Done" } }));
+
+test("every result says why it got its view", async () => {
+  const cw = createContextwaise({ ...api, maxTokens: 200, full: ["read_file"] });
+  const reasons = await Promise.all([
+    cw.shrink({ callId: "r1", tool: "read_file", args: {}, output: testRun }),
+    cw.shrink({ callId: "r2", tool: "echo", args: {}, output: "ok" }),
+    cw.shrink({ callId: "r3", tool: "mcp_notion", args: { query: "gitmore" }, output: notionPages }),
+  ]).then((rs) => rs.map((r) => r.reason));
+  assert.deepEqual(reasons, ["marked_full", "fits_budget", "cut"]);
+  const offline = await createContextwaise({ maxTokens: 200 }).shrink({ callId: "r4", tool: "mcp_notion", args: { query: "gitmore" }, output: notionPages });
+  assert.equal(offline.reason, "api_unavailable");
 });
