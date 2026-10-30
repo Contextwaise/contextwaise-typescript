@@ -29,6 +29,8 @@ export type RunTool = (name: string, args: any, call: { id: string }) => unknown
 export type CallOptions = {
   /** The user's request this turn is about. With the text the model wrote before a call, it tells relevance what the agent is after. */
   request?: string;
+  /** The agent these calls belong to, for apps hosting many agents on one client. Default: the client's. */
+  agent?: string;
 };
 
 /** A tool call, whatever the provider: `textBefore` is what the model wrote before it, `args` the parsed arguments. */
@@ -56,7 +58,7 @@ export async function runToolCalls(cw: Contextwaise, calls: ToolCall[], run: Run
       } catch (e) {
         return { id: call.id, content: `Error: ${e instanceof Error ? e.message : String(e)}`, isError: true };
       }
-      const view = await cw.shrink({ callId: call.id, tool: call.name, args: call.args, output, integration });
+      const view = await cw.shrink({ callId: call.id, tool: call.name, args: call.args, output, integration, agent: options.agent });
       return { id: call.id, content: view.text, isError: false };
     }),
   );

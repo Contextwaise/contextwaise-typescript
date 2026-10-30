@@ -27,6 +27,9 @@ const { text } = await generateText({ model, tools, prompt, stopWhen: isStepCoun
 
 - Tools keep returning their full output to your app (`steps[].toolResults`, UI stream). Only the model's view changes, via the AI SDK's own `toModelOutput`.
 - `expand` is added to the tools automatically.
+- Hosting many agents (a platform where users build their own)? Keep one client and name the agent per run: `withContextwaise(cw, { model, tools, agent: agent.name })`. The Anthropic and OpenAI helpers take `agent` in their options too.
+- Tool schemas and lists of actions (an MCP server describing its tools, OpenAI or Anthropic tool definitions, JSON Schema) are detected and always reach the model whole: the next call must follow them exactly. For other outputs the model must see exactly, such as a file the agent will edit, pass `full: (tool, args) => …`.
+- Works with `ai` 6 and 7.
 
 ## Anthropic and OpenAI SDKs
 
@@ -65,14 +68,14 @@ input.push(...response.output, ...(await functionOutputs(cw, response, runTool, 
 |---|---|---|
 | `apiKey` | `CONTEXTWAISE_API_KEY` | Your Contextwaise key (`sw_live_…`). Relevance is then judged by the API (Jev), which means parts of large tool outputs are sent for scoring: see [What leaves your machine](#what-leaves-your-machine). Without a key, nothing leaves your machine and only the local cleanup runs: noise is removed, nothing relevant is ever cut. |
 | `baseUrl` | `CONTEXTWAISE_URL` | Where your Contextwaise app runs. Required with a key. |
-| `agent` | — | Groups this agent's results on the dashboard. |
+| `agent` | — | Groups this agent's results on the dashboard. Each call can override it (`agent` in `shrink`, `withContextwaise` and the Anthropic/OpenAI options). |
 | `maxTokens` | `600` | Budget for the model's view of one tool result. |
 | `budgets` | — | Per-tool budgets, e.g. `{ read_file: 1500 }`: files up to that size reach the model whole. |
-| `full` | — | Tools whose output always reaches the model whole. |
+| `full` | — | Tools whose output always reaches the model whole. Schemas and lists of actions already are. |
 | `ledger` | in memory, last 5,000 calls | Where originals and decisions live. Plug in Redis or a database for multi-process agents. |
 | `onEvent` | — | Every decision (`shrink`, `replay`, `expand`, `api_error`), for logs. |
 
-The API is never in the agent's way: scoring times out after 4 s and is then skipped for 30 s; meanwhile the model reads the cleaned output whole (nothing is cut without the API); reports are batched in the background and dropped if they can't be sent. In scripts and serverless functions, `await cw.flush()` before exiting.
+The API is never in the agent's way: scoring times out after 4 s and is then skipped for 30 s (an hour once the free tokens are used up: only an upgrade brings scoring back, and an `api_error` event says so); meanwhile the model reads the cleaned output whole (nothing is cut without the API); reports are batched in the background and dropped if they can't be sent. In scripts and serverless functions, `await cw.flush()` before exiting.
 
 ## What leaves your machine
 
@@ -83,7 +86,7 @@ With an API key, the SDK makes two kinds of calls to your Contextwaise app:
 | Call | When | What is sent | What the app keeps |
 |---|---|---|---|
 | **Scoring** | Only when a cleaned tool output is larger than its budget, and when the agent calls `expand` with a question | The tool call id and tool name; the intent (the user's latest message, any text the model wrote before the call, and the call's argument values); and the cleaned output in sections, with dates, times, long numbers and hex ids removed | The scores (cached 7 days by call id, so a replay gets the same view) and a usage record: tool name, call id, token counts. **No text is stored.** |
-| **Reports** | After every tool result and every `expand` | Tool name, call id, sizes, mode and timing, and the model id with the Vercel AI SDK; for an `expand`, the input size of the model call that asked for it | All of it, for your dashboard. Reports never contain tool output or intent. |
+| **Reports** | After every tool result and every `expand` | Tool name, agent, call id, sizes, mode, why the result got its view (`reason`: `cut`, `fits_budget`, `small_saving`, `schema`, …) and timing, and the model id with the Vercel AI SDK; for an `expand`, the input size of the model call that asked for it | All of it, for your dashboard. Reports never contain tool output or intent. |
 
 To score, the app forwards the intent and sections to **TypeSafe (Jev)**, its relevance model. Outputs that fit their budget, tools listed in `full`, and replays are never sent anywhere.
 

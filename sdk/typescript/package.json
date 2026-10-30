@@ -37,7 +37,7 @@
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "peerDependencies": {
-    "ai": ">=7"
+    "ai": ">=6"
   },
   "dependencies": {
     "@contextwaise/core": "^0.1.0"
