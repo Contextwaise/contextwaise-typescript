@@ -1,5 +1,7 @@
 # contextwaise
 
+[![npm](https://img.shields.io/npm/v/contextwaise)](https://www.npmjs.com/package/contextwaise)
+
 Shrinks agent **tool results** before the model reads them: cache-safe, reversible, intent-aware.
 
 In an agent loop, every tool result is resent on every later turn. A 20K-token test log read at turn 3 of a 20-turn task is paid ~17 more times. Contextwaise gives the model a short view of each result, once, at the moment the tool returns:
@@ -10,6 +12,12 @@ In an agent loop, every tool result is resent on every later turn. A 20K-token t
 4. **Nothing is lost**: the model can call `expand({ ref, question })` to get any part back.
 
 Cache-safe by design: a result's view is decided once and replayed byte-for-byte by tool call id, so the provider's prompt cache keeps hitting and edited-history checks (newer Claude models) never trip.
+
+```bash
+npm install contextwaise
+```
+
+Node 20+. One dependency: [`@contextwaise/core`](https://www.npmjs.com/package/@contextwaise/core).
 
 ## Vercel AI SDK
 

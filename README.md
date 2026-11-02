@@ -1,5 +1,9 @@
 # Contextwaise
 
+[![npm: contextwaise](https://img.shields.io/npm/v/contextwaise?label=contextwaise)](https://www.npmjs.com/package/contextwaise)
+[![npm: @contextwaise/core](https://img.shields.io/npm/v/@contextwaise/core?label=@contextwaise/core)](https://www.npmjs.com/package/@contextwaise/core)
+[![PyPI: contextwaise](https://img.shields.io/pypi/v/contextwaise?label=pypi)](https://pypi.org/project/contextwaise/)
+
 Cut what your LLM pays to read, without changing what it can answer.
 
 Agents resend every tool result on every later turn, and apps send whole documents
@@ -19,6 +23,10 @@ Contextwaise API; without an API key the SDK only runs the local cleanup and not
 leaves your machine. See [What leaves your machine](sdk/typescript/README.md#what-leaves-your-machine).
 
 ## Quick start
+
+```bash
+npm install contextwaise
+```
 
 ```ts
 import { createContextwaise } from "contextwaise";
