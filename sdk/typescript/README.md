@@ -1,8 +1,28 @@
-# contextwaise
+<p align="center">
+  <a href="https://contextwaise.com">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://contextwaise.com/logo-dark.png">
+      <img src="https://contextwaise.com/logo.png" alt="Contextwaise" width="280">
+    </picture>
+  </a>
+</p>
 
-[![npm](https://img.shields.io/npm/v/contextwaise)](https://www.npmjs.com/package/contextwaise)
+<p align="center"><strong>Shrinks agent tool results before the model reads them: cache-safe, reversible, intent-aware.</strong></p>
 
-Shrinks agent **tool results** before the model reads them: cache-safe, reversible, intent-aware.
+<p align="center">
+  <a href="https://www.npmjs.com/package/contextwaise"><img src="https://img.shields.io/npm/v/contextwaise?labelColor=171717&color=80cd00" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/contextwaise"><img src="https://img.shields.io/npm/dm/contextwaise?labelColor=171717&color=80cd00" alt="npm downloads"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/contextwaise?labelColor=171717&color=80cd00" alt="Node version"></a>
+  <a href="https://opensource.org/license/mit"><img src="https://img.shields.io/badge/license-MIT-80cd00?labelColor=171717" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="https://contextwaise.com">Website</a> ·
+  <a href="https://contextwaise.com/docs/sdk">Docs</a> ·
+  <a href="https://pypi.org/project/contextwaise/">Python SDK</a>
+</p>
+
+---
 
 In an agent loop, every tool result is resent on every later turn. A 20K-token test log read at turn 3 of a 20-turn task is paid ~17 more times. Contextwaise gives the model a short view of each result, once, at the moment the tool returns:
 

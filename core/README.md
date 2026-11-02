@@ -1,10 +1,31 @@
-# @contextwaise/core
+<p align="center">
+  <a href="https://contextwaise.com">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://contextwaise.com/logo-dark.png">
+      <img src="https://contextwaise.com/logo.png" alt="Contextwaise" width="280">
+    </picture>
+  </a>
+</p>
 
-[![npm](https://img.shields.io/npm/v/@contextwaise/core)](https://www.npmjs.com/package/@contextwaise/core)
+<p align="center"><strong>The rules that decide what context reaches your model.</strong></p>
 
-The rules that decide what context reaches your model. Pure and deterministic: no
-network, no database, runs in Node, browsers and edge runtimes. Used by the
-[`contextwaise`](../sdk/typescript) SDK and the Contextwaise API.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@contextwaise/core"><img src="https://img.shields.io/npm/v/@contextwaise/core?label=%40contextwaise%2Fcore&labelColor=171717&color=80cd00" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@contextwaise/core"><img src="https://img.shields.io/npm/types/@contextwaise/core?labelColor=171717&color=80cd00" alt="TypeScript types"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/@contextwaise/core?labelColor=171717&color=80cd00" alt="Node version"></a>
+  <a href="https://opensource.org/license/mit"><img src="https://img.shields.io/badge/license-MIT-80cd00?labelColor=171717" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="https://contextwaise.com">Website</a> ·
+  <a href="https://www.npmjs.com/package/contextwaise">contextwaise SDK</a>
+</p>
+
+---
+
+Pure and deterministic: no network, no database, runs in Node, browsers and edge
+runtimes. Used by the [`contextwaise`](https://www.npmjs.com/package/contextwaise) SDK
+and the Contextwaise API.
 
 | Module | What it decides |
 |---|---|
