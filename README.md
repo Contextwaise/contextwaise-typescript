@@ -1,10 +1,29 @@
-# Contextwaise
+<p align="center">
+  <a href="https://contextwaise.com">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://contextwaise.com/logo-dark.png">
+      <img src="https://contextwaise.com/logo.png" alt="Contextwaise" width="280">
+    </picture>
+  </a>
+</p>
 
-[![npm: contextwaise](https://img.shields.io/npm/v/contextwaise?label=contextwaise)](https://www.npmjs.com/package/contextwaise)
-[![npm: @contextwaise/core](https://img.shields.io/npm/v/@contextwaise/core?label=@contextwaise/core)](https://www.npmjs.com/package/@contextwaise/core)
-[![PyPI: contextwaise](https://img.shields.io/pypi/v/contextwaise?label=pypi)](https://pypi.org/project/contextwaise/)
+<p align="center"><strong>Cut what your LLM pays to read, without changing what it can answer.</strong></p>
 
-Cut what your LLM pays to read, without changing what it can answer.
+<p align="center">
+  <a href="https://www.npmjs.com/package/contextwaise"><img src="https://img.shields.io/npm/v/contextwaise?label=contextwaise&labelColor=171717&color=80cd00" alt="contextwaise on npm"></a>
+  <a href="https://www.npmjs.com/package/@contextwaise/core"><img src="https://img.shields.io/npm/v/@contextwaise/core?label=%40contextwaise%2Fcore&labelColor=171717&color=80cd00" alt="@contextwaise/core on npm"></a>
+  <a href="https://pypi.org/project/contextwaise/"><img src="https://img.shields.io/pypi/v/contextwaise?label=pypi&labelColor=171717&color=80cd00" alt="contextwaise on PyPI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-80cd00?labelColor=171717" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="https://contextwaise.com">Website</a> ·
+  <a href="https://contextwaise.com/docs/sdk">Docs</a> ·
+  <a href="sdk/typescript">TypeScript SDK</a> ·
+  <a href="https://github.com/Contextwaise/contextwaise-python">Python SDK</a>
+</p>
+
+---
 
 Agents resend every tool result on every later turn, and apps send whole documents
 when a few paragraphs would do. Contextwaise keeps the part of that context relevant
