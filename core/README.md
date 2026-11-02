@@ -1,5 +1,7 @@
 # @contextwaise/core
 
+[![npm](https://img.shields.io/npm/v/@contextwaise/core)](https://www.npmjs.com/package/@contextwaise/core)
+
 The rules that decide what context reaches your model. Pure and deterministic: no
 network, no database, runs in Node, browsers and edge runtimes. Used by the
 [`contextwaise`](../sdk/typescript) SDK and the Contextwaise API.
@@ -14,6 +16,10 @@ network, no database, runs in Node, browsers and edge runtimes. Used by the
 
 Relevance scores are the caller's: `select()` takes items already scored on a 0 to 3
 scale (0 unrelated, 1 loosely related background, 2 useful evidence, 3 essential).
+
+```bash
+npm install @contextwaise/core
+```
 
 ```ts
 import { cleanCandidate, keepThreshold, select, estimateTokens } from "@contextwaise/core";
