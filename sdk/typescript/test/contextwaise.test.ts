@@ -334,7 +334,7 @@ test("expand: asked again about the same result, it returns parts not shown yet,
 
 test("Vercel AI SDK: a call marked full reaches the model whole", async () => {
   const cw = createContextwaise(api);
-  const mcp = tool({ inputSchema: jsonSchema<{ action?: string; params?: object }>({ type: "object" }), execute: async () => actionSchema });
+  const mcp = tool({ inputSchema: jsonSchema<{ action?: string; params?: object }>({ type: "object" }), execute: async (): Promise<unknown> => actionSchema });
   const { tools } = withContextwaise(cw, { model: new MockLanguageModelV4(), tools: { mcp_notion: mcp }, full: (_tool, args) => (args as { params?: object }).params === undefined });
   const describe = await tools.mcp_notion.toModelOutput!({ toolCallId: "d1", input: { action: "notion-query-data-sources" }, output: actionSchema });
   assert.equal((describe as { value: string }).value, JSON.stringify(actionSchema), "describing an action: whole");
