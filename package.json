@@ -11,7 +11,7 @@
     "typecheck": "npm run typecheck -w @contextwaise/core && npm run typecheck -w contextwaise"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@types/node": "^26",
     "typescript": "^5"
   },
   "engines": {
